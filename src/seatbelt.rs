@@ -37,6 +37,12 @@ pub(crate) fn argv(policy: &Policy) -> Result<Vec<OsString>, Error> {
         return Err(Error::Policy("only bwrap mounts an overlay".into()));
     }
 
+    if !policy.scratch.is_empty() {
+        return Err(Error::Policy(
+            "only bwrap gives a command an empty directory of its own".into(),
+        ));
+    }
+
     Ok(vec![
         SANDBOX_EXEC.into(),
         "-p".into(),
@@ -230,6 +236,15 @@ mod tests {
     #[test]
     fn quotes_a_path_with_a_quote() {
         assert_eq!(quote(Path::new("/a\"b")).unwrap(), "\"/a\\\"b\"");
+    }
+
+    #[test]
+    fn refuses_a_scratch_dir() {
+        let policy = Policy {
+            scratch: vec!["/tmp".into()],
+            ..Policy::default()
+        };
+        assert!(matches!(argv(&policy), Err(Error::Policy(_))));
     }
 
     #[test]

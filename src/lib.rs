@@ -42,6 +42,9 @@ pub struct Policy {
     pub unreadable: Vec<PathBuf>,
     /// Exceptions inside `unreadable`
     pub readable: Vec<PathBuf>,
+    /// Directories that start empty and writable, and whose writes go away with the command. bwrap
+    /// only, as a tmpfs. macOS has no way to give one process an empty directory
+    pub scratch: Vec<PathBuf>,
     /// Paths it may not read or list, even inside `readable` or `writable`
     pub hidden: Vec<PathBuf>,
     /// TCP and UDP. Off also hides the host's localhost under bwrap
@@ -72,6 +75,7 @@ impl Default for Policy {
             pinned: vec![],
             unreadable: vec![],
             readable: vec![],
+            scratch: vec![],
             hidden: vec![],
             network: true,
             unix_sockets: Access::All,
@@ -101,6 +105,7 @@ impl Policy {
             .chain(&self.pinned)
             .chain(&self.unreadable)
             .chain(&self.readable)
+            .chain(&self.scratch)
             .chain(&self.hidden)
             .chain(&self.no_exec)
             .chain(sockets)
@@ -115,14 +120,19 @@ impl Policy {
             &mut self.pinned,
             &mut self.unreadable,
             &mut self.readable,
+            &mut self.scratch,
             &mut self.hidden,
             &mut self.no_exec,
         ];
 
+        // `/var/run` resolves to `/run` on most Linux systems, so one dir can appear twice
         for list in lists {
             for path in list.iter_mut() {
                 *path = real(path);
             }
+
+            let mut seen = std::collections::HashSet::new();
+            list.retain(|p| seen.insert(p.clone()));
         }
 
         if let Access::Only(dirs) = &mut self.unix_sockets {
@@ -175,6 +185,12 @@ impl Backend {
                 .into(),
         ))
     }
+}
+
+/// Whether bwrap can mount an overlay with its layers in `dir`, and why not. It needs bwrap 0.10 or
+/// later and a kernel that mounts overlayfs in a user namespace
+pub fn overlay_supported(dir: &Path) -> Result<(), Error> {
+    bwrap::overlay_supported(dir)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -275,6 +291,19 @@ mod tests {
         };
         let err = Sandbox::seatbelt(policy).unwrap_err();
         assert!(matches!(err, Error::Policy(m) if m.contains("relative")));
+    }
+
+    #[test]
+    fn a_dir_listed_twice_through_a_symlink_appears_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let run = dir.path().join("run");
+        std::fs::create_dir(&run).unwrap();
+        std::os::unix::fs::symlink(&run, dir.path().join("var-run")).unwrap();
+        let policy = Policy {
+            scratch: vec![run.clone(), dir.path().join("var-run")],
+            ..Policy::default()
+        };
+        assert_eq!(policy.resolved().scratch, [real(&run)]);
     }
 
     #[test]

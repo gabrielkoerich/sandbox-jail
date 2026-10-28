@@ -6,7 +6,7 @@ A library that runs a command under a path policy enforced by the kernel. Seatbe
 
 ## Rules
 
-- The caller defines the whole policy. The crate holds no policy of its own. `jail::known` has lists a caller opts into, never defaults it gets silently.
+- The caller defines the whole policy. The crate holds no policy of its own. `sandbox_jail::known` has lists a caller opts into, never defaults it gets silently.
 - The caller names the backend for each use, or takes `Backend::detect()`.
 - `Sandbox::new` checks the policy against the backend and refuses what that backend cannot enforce, before anything runs. A rule that silently does nothing is worse than an error.
 - Every path is resolved first. Seatbelt matches the real path, so `/tmp` must become `/private/tmp`.
@@ -19,8 +19,8 @@ A library that runs a command under a path policy enforced by the kernel. Seatbe
 | Seatbelt profile | `Jail::profile()` | `seatbelt::profile()`, every rule behind a policy field |
 | bwrap arguments | `Jail::bwrap_args()` | `bwrap::argv()` |
 | Detection, nested sandbox probe, AppArmor fix | `sandbox()`, `userns_fix()` | `Backend::detect()`, `Error::Nested` |
-| Kernel query | `in_a_jail()` | `macos::sandboxed()`, `macos::denies()`. shipcheck builds its `in_a_jail()` from them |
-| Lists | `SECRETS`, `MACH_SERVICES`, `TEMP`, `setuid()`, `LAUNCHCTL`, `refused_env()` | `known::*` |
+| Kernel query | `in_a_jail()` | `sandbox_jail::macos::sandboxed()`, `sandbox_jail::macos::denies()`. shipcheck builds its `in_a_jail()` from them |
+| Lists | `SECRETS`, `MACH_SERVICES`, `TEMP`, `setuid()`, `LAUNCHCTL`, `refused_env()` | `sandbox_jail::known` |
 
 What stays in shipcheck: the environment it builds for a check, its `TOOLCHAINS` list, its caches and the launchd jobs that kill a check's whole process tree. The launchd code is a candidate for this crate once a second user needs it.
 
@@ -31,7 +31,9 @@ What stays in shipcheck: the environment it builds for a check, its `TOOLCHAINS`
 | `pinned`, `no_exec` under bwrap | Refused | bwrap has no rule for either. It runs setuid binaries without privileges, which covers what `no_exec` is for in shipcheck |
 | `overlays` under Seatbelt | Refused | macOS has no overlay mount |
 | `unix_sockets` under bwrap | A socket is out of reach only when `unreadable` or `hidden` covers its directory. Abstract sockets stay reachable unless `network` is off | bwrap has no socket filter. shipcheck relies on the same hiding today |
-| `unreadable` under bwrap | An empty directory, read-only once every mount in it exists | Matches Seatbelt, where writes there are already denied. shipcheck left its `/tmp` and `/run` writable on Linux, so a check that writes there fails after the move |
+| `unreadable` under bwrap | An empty directory, read-only once every mount in it exists | Matches Seatbelt, where writes there are already denied |
+| `scratch` under Seatbelt | Refused | macOS cannot give one process an empty directory. shipcheck sets it on Linux only, for the writable `/tmp`, `/run` and `/var/tmp` each check gets today |
+| `overlays` | `overlay_supported(dir)` says up front whether this bwrap and kernel mount one | It needs bwrap 0.10 or later and overlayfs in a user namespace, and overlayfs refuses layers on another overlay. shipcheck uses the answer to choose between an overlay and a copy |
 | Missing paths under bwrap | `writable` refused, others skipped | `--bind` needs a source. Build the sandbox right before running |
 | `mach_services`, `apple_events` under bwrap | Ignored | Linux has neither |
 
@@ -43,7 +45,7 @@ What stays in shipcheck: the environment it builds for a check, its `TOOLCHAINS`
 | A copy of the profile code in orch | Two copies of rules shipcheck already tested (setuid, `launchctl`, AppArmor, Mach services) would drift |
 | `ai-jail` | A CLI with no library target, under GPL-3.0 |
 | Anthropic `sandbox-runtime` | TypeScript |
-| `jail` as the package name | A FreeBSD jail library holds it on crates.io. The library is still `jail` |
+| `jail` as the name | A FreeBSD jail library holds it on crates.io. `sandbox-jail` also says what it is to someone searching for a sandbox, and the package, the import and docs.rs all match |
 
 ## Costs
 
@@ -55,6 +57,6 @@ What stays in shipcheck: the environment it builds for a check, its `TOOLCHAINS`
 
 ## Next
 
-1. Move shipcheck to this crate with no change in behavior, apart from the read-only `unreadable` dirs on Linux.
+1. Move shipcheck to this crate with no change in behavior.
 2. Orch, see [orch.md](orch.md).
 3. The launchd process tree kill, when orch needs it.

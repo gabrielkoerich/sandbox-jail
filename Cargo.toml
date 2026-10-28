@@ -11,9 +11,6 @@ keywords = ["sandbox", "seatbelt", "bubblewrap", "jail", "agents"]
 categories = ["os::macos-apis", "os::linux-apis", "development-tools"]
 include = ["/src/**", "/LICENSE", "/README.md"]
 
-[lib]
-name = "jail"
-
 [dependencies]
 
 [dev-dependencies]

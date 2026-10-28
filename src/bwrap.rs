@@ -57,6 +57,80 @@ fn userns_fix(restricted: Option<&str>, profile: bool) -> String {
     }
 }
 
+static PROBES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+pub(crate) fn overlay_supported(dir: &Path) -> Result<(), Error> {
+    if !cfg!(target_os = "linux") {
+        return Err(Error::Unavailable("only bwrap mounts an overlay".into()));
+    }
+
+    let n = PROBES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let probe = dir.join(format!(".sandbox-jail-probe-{}-{n}", std::process::id()));
+    // Only a probe dir this call made is ever removed
+    fs::create_dir(&probe).map_err(|e| Error::Unavailable(format!("{}: {e}", probe.display())))?;
+    let [lower, upper, work] = ["lower", "upper", "work"].map(|d| probe.join(d));
+    let ran = [&lower, &upper, &work]
+        .into_iter()
+        .try_for_each(fs::create_dir)
+        .map_err(|e| e.to_string())
+        .and_then(|_| {
+            Command::new("bwrap")
+                .args(["--ro-bind", "/", "/", "--dev", "/dev", "--overlay-src"])
+                .arg(&lower)
+                .arg("--overlay")
+                .args([&upper, &work, &lower])
+                .arg("true")
+                .stdin(Stdio::null())
+                .output()
+                .map_err(|e| format!("bwrap: {e}"))
+        });
+    remove_tree(&probe);
+    let out = ran.map_err(Error::Unavailable)?;
+
+    if out.status.success() {
+        return Ok(());
+    }
+
+    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+
+    if err.contains("--overlay-src") {
+        let version = Command::new("bwrap")
+            .arg("--version")
+            .output()
+            .ok()
+            .and_then(|o| {
+                String::from_utf8_lossy(&o.stdout)
+                    .lines()
+                    .next()
+                    .map(|l| l.trim().to_string())
+            })
+            .unwrap_or_else(|| "this bwrap".into());
+        return Err(Error::Unavailable(format!(
+            "{version} has no --overlay-src"
+        )));
+    }
+
+    Err(Error::Unavailable(format!(
+        "bwrap could not mount an overlay: {err}"
+    )))
+}
+
+/// Removes a tree with read-only directories in it, as overlayfs leaves its work dir
+fn remove_tree(dir: &Path) {
+    // The system's chmod, never one earlier on PATH
+    let chmod = ["/bin/chmod", "/usr/bin/chmod"]
+        .into_iter()
+        .find(|c| Path::new(c).exists())
+        .unwrap_or("chmod");
+    let _ = Command::new(chmod)
+        .arg("-R")
+        .arg("u+rwx")
+        .arg(dir)
+        .stderr(Stdio::null())
+        .status();
+    let _ = fs::remove_dir_all(dir);
+}
+
 fn is_dir(p: &Path) -> bool {
     fs::symlink_metadata(p).is_ok_and(|m| m.is_dir())
 }
@@ -112,15 +186,21 @@ pub(crate) fn argv(p: &Policy) -> Result<Vec<OsString>, Error> {
     }
 
     let unreadable: Vec<&PathBuf> = p.unreadable.iter().filter(|d| is_dir(d)).collect();
+    let scratch: Vec<&PathBuf> = p.scratch.iter().filter(|d| is_dir(d)).collect();
 
-    for dir in &unreadable {
+    for dir in unreadable.iter().chain(&scratch) {
         args.extend(["--tmpfs".into(), (*dir).into()]);
     }
 
     // systemd-resolved links /etc/resolv.conf into /run
     let resolv = real(Path::new("/etc/resolv.conf"));
 
-    if resolv.exists() && unreadable.iter().any(|d| resolv.starts_with(d)) {
+    if resolv.exists()
+        && unreadable
+            .iter()
+            .chain(&scratch)
+            .any(|d| resolv.starts_with(d))
+    {
         bind(&mut args, "--ro-bind", &resolv);
     }
 
@@ -184,6 +264,23 @@ mod tests {
         };
         let args = argv(&policy).unwrap();
         assert!(pos(&args, "--bind", &w) < pos(&args, "--tmpfs", &secret));
+    }
+
+    #[test]
+    fn scratch_dirs_are_an_empty_tmpfs_that_stays_writable() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = real(dir.path());
+        let policy = Policy {
+            scratch: vec![s.clone()],
+            ..Policy::default()
+        };
+        let args = argv(&policy).unwrap();
+        pos(&args, "--tmpfs", &s);
+        assert!(
+            !args
+                .windows(2)
+                .any(|w| w[0] == "--remount-ro" && w[1] == s.as_os_str())
+        );
     }
 
     #[test]

@@ -29,6 +29,7 @@ jobs:
           sudo cp /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/
           sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
           bwrap --ro-bind / / --dev /dev --proc /proc --unshare-pid true
+          echo "SANDBOX_JAIL_EXPECT_OVERLAY=1" >> "$GITHUB_ENV"
 
       - run: cargo test
 

@@ -1,6 +1,6 @@
 //! Runs commands in the real OS sandbox and checks what the kernel lets through
 
-use jail::{Access, Backend, Policy, Sandbox};
+use sandbox_jail::{Access, Backend, Policy, Sandbox};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -284,6 +284,71 @@ fn seatbelt_connects_only_to_listed_unix_sockets() {
 }
 
 #[test]
+fn bwrap_scratch_starts_empty_and_leaves_the_host_dir_alone() {
+    if seatbelt() {
+        return;
+    }
+
+    let s = tempfile::tempdir().unwrap();
+    let s = real(s.path());
+    fs::write(s.join("host"), "h").unwrap();
+    let policy = Policy {
+        scratch: vec![s.clone()],
+        ..Policy::default()
+    };
+    let (ok, err) = run(
+        policy,
+        &format!("! ls {0}/host && echo x > {0}/mine", s.display()),
+    );
+    assert!(ok, "{err}");
+    assert!(s.join("host").exists());
+    assert!(!s.join("mine").exists());
+}
+
+#[test]
+fn overlay_writes_go_to_the_upper_layer() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = real(dir.path());
+    let supported = sandbox_jail::overlay_supported(&d);
+
+    if seatbelt() {
+        assert!(supported.is_err());
+        return;
+    }
+
+    // overlayfs refuses layers on another overlay, such as a container's root. CI sets the variable
+    if let Err(e) = supported {
+        assert!(
+            std::env::var("SANDBOX_JAIL_EXPECT_OVERLAY").as_deref() != Ok("1"),
+            "SANDBOX_JAIL_EXPECT_OVERLAY is set but {e}"
+        );
+        eprintln!("skipped: {e}");
+        return;
+    }
+
+    let [lower, upper, work] = ["lower", "upper", "work"].map(|n| d.join(n));
+    for p in [&lower, &upper, &work] {
+        fs::create_dir(p).unwrap();
+    }
+    fs::write(lower.join("base"), "b").unwrap();
+    let policy = Policy {
+        overlays: vec![sandbox_jail::Overlay {
+            lower: lower.clone(),
+            upper: upper.clone(),
+            work,
+        }],
+        ..Policy::default()
+    };
+    let (ok, err) = run(
+        policy,
+        &format!("grep -q b {0}/base && echo n > {0}/new", lower.display()),
+    );
+    assert!(ok, "{err}");
+    assert!(!lower.join("new").exists());
+    assert!(upper.join("new").exists());
+}
+
+#[test]
 fn seatbelt_looks_up_only_listed_mach_services() {
     if !seatbelt() {
         return;
@@ -302,7 +367,7 @@ fn seatbelt_looks_up_only_listed_mach_services() {
         id(&mut Sandbox::seatbelt(policy).unwrap().command("/usr/bin/id"))
     };
     let name = id(&mut std::process::Command::new("/usr/bin/id"));
-    let basic = jail::known::BASIC_MACH_SERVICES
+    let basic = sandbox_jail::known::BASIC_MACH_SERVICES
         .iter()
         .map(|s| s.to_string())
         .collect();
@@ -313,7 +378,7 @@ fn seatbelt_looks_up_only_listed_mach_services() {
 #[cfg(target_os = "macos")]
 #[test]
 fn the_kernel_reports_the_sandbox_from_inside() {
-    assert!(!jail::macos::sandboxed());
+    assert!(!sandbox_jail::macos::sandboxed());
     let exe = std::env::current_exe().unwrap();
     let out = Sandbox::seatbelt(Policy::default())
         .unwrap()
@@ -335,5 +400,5 @@ fn the_kernel_reports_the_sandbox_from_inside() {
 fn probe_sandboxed() {
     // Run by the test above, inside the sandbox
     #[cfg(target_os = "macos")]
-    println!("sandboxed={}", jail::macos::sandboxed());
+    println!("sandboxed={}", sandbox_jail::macos::sandboxed());
 }
