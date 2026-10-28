@@ -165,6 +165,24 @@ pub(crate) fn argv(p: &Policy) -> Result<Vec<OsString>, Error> {
         )));
     }
 
+    // A bind mounts after the scratch tmpfs, so one around it would show the host's files there
+    let bound = p
+        .writable
+        .iter()
+        .chain(&p.readable)
+        .chain(&p.read_only)
+        .chain(p.overlays.iter().map(|o| &o.lower));
+
+    for b in bound {
+        if let Some(s) = p.scratch.iter().find(|s| s.starts_with(b)) {
+            return Err(Error::Policy(format!(
+                "{}: a scratch dir inside the bound path {} would show its files",
+                s.display(),
+                b.display()
+            )));
+        }
+    }
+
     let mut args: Vec<OsString> = [
         "bwrap",
         "--ro-bind",
@@ -317,6 +335,30 @@ mod tests {
         ] {
             assert!(matches!(argv(&policy), Err(Error::Policy(_))), "{policy:?}");
         }
+    }
+
+    #[test]
+    fn refuses_a_scratch_dir_a_bind_would_cover() {
+        let dir = tempfile::tempdir().unwrap();
+        let w = real(dir.path());
+        fs::create_dir(w.join("s")).unwrap();
+        for scratch in [w.clone(), w.join("s")] {
+            let policy = Policy {
+                writable: vec![w.clone()],
+                scratch: vec![scratch],
+                ..Policy::default()
+            };
+            assert!(matches!(argv(&policy), Err(Error::Policy(_))), "{policy:?}");
+        }
+
+        // A writable dir inside a scratch dir binds over the tmpfs, as shipcheck's jail under /tmp does
+        let policy = Policy {
+            writable: vec![w.join("s")],
+            scratch: vec![w.clone()],
+            ..Policy::default()
+        };
+        let args = argv(&policy).unwrap();
+        assert!(pos(&args, "--tmpfs", &w) < pos(&args, "--bind", &w.join("s")));
     }
 
     #[test]
