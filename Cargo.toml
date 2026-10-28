@@ -3,11 +3,11 @@ name = "sandbox-jail"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.89"
-description = "Run a command in the OS sandbox, Seatbelt on macOS and bubblewrap on Linux, under a policy the caller defines"
+description = "Run a command in a sandbox under a policy the caller defines: Seatbelt on macOS, bubblewrap on Linux, or a throwaway tart or lume VM"
 license = "MIT"
 repository = "https://github.com/gabrielkoerich/sandbox-jail"
 readme = "README.md"
-keywords = ["sandbox", "seatbelt", "bubblewrap", "jail", "agents"]
+keywords = ["sandbox", "seatbelt", "bubblewrap", "vm", "agents"]
 categories = ["os::macos-apis", "os::linux-apis", "development-tools", "command-line-utilities"]
 include = ["/src/**", "/LICENSE", "/README.md"]
 

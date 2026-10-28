@@ -1,8 +1,8 @@
-//! Boots real tart VMs, so each test is ignored by default: `cargo test --test vm -- --ignored`.
-//! `SANDBOX_JAIL_TART_LINUX` and `SANDBOX_JAIL_TART_MACOS` pick other images
+//! Boots real tart and lume VMs, so each test is ignored: `cargo test --test vm -- --ignored`.
+//! `SANDBOX_JAIL_{TART,LUME}_{LINUX,MACOS}` pick other images
 
-use sandbox_jail::Policy;
 use sandbox_jail::vm::Vm;
+use sandbox_jail::{Error, Policy};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -26,7 +26,10 @@ fn run(vm: &Vm, dir: &Path, script: &str) -> (Option<i32>, String) {
     )
 }
 
-fn shares_reach_the_host_at_their_paths(image: &str) {
+fn shares_reach_the_host_at_their_paths(
+    start: fn(&str, &Policy) -> Result<Vm, Error>,
+    image: &str,
+) {
     let (w, r, secret) = (
         tempfile::tempdir().unwrap(),
         tempfile::tempdir().unwrap(),
@@ -40,7 +43,7 @@ fn shares_reach_the_host_at_their_paths(image: &str) {
         readable: vec![r.clone()],
         ..Policy::default()
     };
-    let vm = Vm::tart(image, &policy).unwrap();
+    let vm = start(image, &policy).unwrap();
 
     let (code, out) = run(&vm, &w, "pwd -P >/dev/null; echo guest > from-guest; pwd");
     assert_eq!(code, Some(0));
@@ -50,7 +53,7 @@ fn shares_reach_the_host_at_their_paths(image: &str) {
         "guest"
     );
 
-    let script = format!("cat {0}/f && ! echo x > {0}/nope", r.display());
+    let script = format!("cat {0}/f && ! echo x 2>/dev/null >{0}/nope", r.display());
     assert_eq!(run(&vm, &w, &script), (Some(0), "host".into()));
     assert!(!r.join("nope").exists());
 
@@ -67,19 +70,40 @@ fn shares_reach_the_host_at_their_paths(image: &str) {
 #[test]
 #[ignore]
 fn tart_linux_shares_reach_the_host_at_their_paths() {
-    shares_reach_the_host_at_their_paths(&image(
-        "SANDBOX_JAIL_TART_LINUX",
-        "ghcr.io/cirruslabs/ubuntu:24.04",
-    ));
+    shares_reach_the_host_at_their_paths(
+        Vm::tart,
+        &image("SANDBOX_JAIL_TART_LINUX", "ghcr.io/cirruslabs/ubuntu:24.04"),
+    );
 }
 
 #[test]
 #[ignore]
 fn tart_macos_shares_reach_the_host_at_their_paths() {
-    shares_reach_the_host_at_their_paths(&image(
-        "SANDBOX_JAIL_TART_MACOS",
-        "ghcr.io/cirruslabs/macos-tahoe-base:latest",
-    ));
+    shares_reach_the_host_at_their_paths(
+        Vm::tart,
+        &image(
+            "SANDBOX_JAIL_TART_MACOS",
+            "ghcr.io/cirruslabs/macos-tahoe-base:latest",
+        ),
+    );
+}
+
+#[test]
+#[ignore]
+fn lume_linux_shares_reach_the_host_at_their_paths() {
+    shares_reach_the_host_at_their_paths(
+        Vm::lume,
+        &image("SANDBOX_JAIL_LUME_LINUX", "ubuntu-noble-vanilla_latest"),
+    );
+}
+
+#[test]
+#[ignore]
+fn lume_macos_shares_reach_the_host_at_their_paths() {
+    shares_reach_the_host_at_their_paths(
+        Vm::lume,
+        &image("SANDBOX_JAIL_LUME_MACOS", "macos-tahoe-vanilla_latest"),
+    );
 }
 
 #[test]

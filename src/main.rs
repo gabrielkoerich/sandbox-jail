@@ -19,6 +19,8 @@ exec    runs the command in the OS sandbox: Seatbelt on macOS, bubblewrap on Lin
 exec options:
       --vm tart:<image>   run in a tart clone of <image>, deleted afterwards. The image needs the
                           Tart Guest Agent, as ghcr.io/cirruslabs/ubuntu and macos-*-base have
+      --vm lume:<image>   run in a lume clone of <image>, such as ubuntu-noble-vanilla_latest or
+                          macos-tahoe-vanilla_latest. lume passes no stdin to the command
   -w, --write <path>      also let it write <path>
   -r, --read-only <path>  never let it write <path>, even inside a writable one
       --hide <path>       never let it read <path>
@@ -78,8 +80,8 @@ fn parse_exec(args: &[OsString]) -> Result<ExecArgs, String> {
             Some("--dry-run") => dry_run = true,
             Some("--vm") => {
                 let spec = args.next().and_then(|s| s.into_string().ok());
-                let image = spec.as_deref().and_then(|s| s.strip_prefix("tart:"));
-                vm = Some(image.ok_or("--vm takes tart:<image>")?.to_string());
+                let spec = spec.filter(|s| s.starts_with("tart:") || s.starts_with("lume:"));
+                vm = Some(spec.ok_or("--vm takes tart:<image> or lume:<image>")?);
             }
             Some("--") => {
                 command.extend(args.by_ref());
@@ -144,12 +146,17 @@ const SIGINT: i32 = 2;
 const SIG_IGN: usize = 1;
 
 // The guest shares only what the flags name, so none of the host defaults apply
-fn exec_in_vm(image: &str, mut args: ExecArgs) -> Result<ExitCode, String> {
+fn exec_in_vm(spec: &str, mut args: ExecArgs) -> Result<ExitCode, String> {
     let cwd = std::env::current_dir().map_err(|e| format!("current directory: {e}"))?;
     args.policy.writable.insert(0, cwd.clone());
-    let vm = Vm::tart(image, &args.policy).map_err(|e| e.to_string())?;
+    let vm = match spec.split_once(':') {
+        Some(("lume", image)) => Vm::lume(image, &args.policy),
+        Some((_, image)) => Vm::tart(image, &args.policy),
+        None => unreachable!("parse_exec checks the spec"),
+    }
+    .map_err(|e| e.to_string())?;
 
-    // Ctrl-C reaches the guest command through tart exec, and this process stays to delete the clone
+    // Ctrl-C reaches the guest command through tart exec or lume ssh, and this process stays to delete the clone
     // Safe: ignoring a signal changes no state but the disposition of SIGINT
     unsafe {
         signal(SIGINT, SIG_IGN);
@@ -223,9 +230,14 @@ mod tests {
     }
 
     #[test]
-    fn vm_takes_a_tart_image() {
+    fn vm_takes_a_tart_or_lume_image() {
         let a = args(&["--vm", "tart:ghcr.io/cirruslabs/ubuntu:24.04", "true"]).unwrap();
-        assert_eq!(a.vm.as_deref(), Some("ghcr.io/cirruslabs/ubuntu:24.04"));
+        assert_eq!(
+            a.vm.as_deref(),
+            Some("tart:ghcr.io/cirruslabs/ubuntu:24.04")
+        );
+        let a = args(&["--vm", "lume:ubuntu-noble-vanilla_latest", "true"]).unwrap();
+        assert_eq!(a.vm.as_deref(), Some("lume:ubuntu-noble-vanilla_latest"));
         assert!(args(&["--vm", "ubuntu", "true"]).is_err());
         assert!(args(&["--vm"]).is_err());
     }
