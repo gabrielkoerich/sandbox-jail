@@ -351,7 +351,7 @@ mod tests {
             assert!(matches!(argv(&policy), Err(Error::Policy(_))), "{policy:?}");
         }
 
-        // A writable dir inside a scratch dir binds over the tmpfs, as shipcheck's jail under /tmp does
+        // A writable dir inside a scratch dir binds over the tmpfs, such as a jail under /tmp
         let policy = Policy {
             writable: vec![w.join("s")],
             scratch: vec![w.clone()],

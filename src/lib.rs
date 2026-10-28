@@ -1,5 +1,5 @@
-//! Run a command in the OS sandbox: Seatbelt (`sandbox-exec`) on macOS, bubblewrap (`bwrap`) on
-//! Linux. The caller defines the whole policy, the crate only enforces it. See docs/DESIGN.md
+//! Run a command in a sandbox under a policy the caller defines: Seatbelt on macOS, bubblewrap on
+//! Linux, or a throwaway tart or lume VM with [`vm::Vm`]. The crate only enforces the policy
 
 mod bwrap;
 pub mod known;
