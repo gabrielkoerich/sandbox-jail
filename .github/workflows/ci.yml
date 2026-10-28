@@ -6,11 +6,9 @@ on:
   pull_request:
 
 jobs:
+  # Linux only. GitHub has few macOS runners and jobs queue there, so shipcheck's test-macos covers macOS
   test:
-    strategy:
-      matrix:
-        os: [macos-latest, ubuntu-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -21,7 +19,6 @@ jobs:
 
       # Ubuntu's AppArmor stops bubblewrap making user namespaces, and a profile for bwrap alone lifts it
       - name: bubblewrap
-        if: runner.os == 'Linux'
         timeout-minutes: 5
         run: |
           apt="-o Acquire::Retries=3 -o Acquire::http::Timeout=30"
@@ -29,7 +26,10 @@ jobs:
           sudo cp /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/
           sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
           bwrap --ro-bind / / --dev /dev --proc /proc --unshare-pid true
-          echo "SANDBOX_JAIL_EXPECT_OVERLAY=1" >> "$GITHUB_ENV"
+          # Ubuntu 24.04 ships bubblewrap 0.9, and --overlay-src needs 0.10
+          if bwrap --help 2>&1 | grep -q -- --overlay-src; then
+            echo "SANDBOX_JAIL_EXPECT_OVERLAY=1" >> "$GITHUB_ENV"
+          fi
 
       - run: cargo test
 

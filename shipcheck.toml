@@ -1,0 +1,15 @@
+runner = "host"
+on = ["push", "commit"]
+
+[host]
+versions = ["cargo --version", "rustc --version", "gitleaks version"]
+
+[host.checks]
+fmt = "cargo fmt --check"
+clippy = "cargo clippy --all-targets -- -D warnings"
+gitleaks = "d=$(mktemp -d \"$HOME/scan.XXXXXX\") && git archive HEAD | tar -x -C \"$d\" && gitleaks dir --redact --no-banner \"$d\""
+
+# The tests start sandbox-exec, which macOS refuses inside shipcheck's own sandbox
+[host.checks.test-macos]
+run = "cargo test"
+sandbox = false
