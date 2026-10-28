@@ -27,11 +27,11 @@ let status = sandbox.command("cargo").arg("test").current_dir(&worktree).status(
 | Field | Meaning | Seatbelt | bwrap |
 |-------|---------|----------|-------|
 | `writable` | May write, and read inside `unreadable` | `subpath` allow | `--bind`, must exist |
-| `read_only` | May not write, even inside `writable` | `subpath` deny | `--ro-bind` |
+| `read_only` | May not write, even inside `writable` | `subpath` deny, and its parents pinned | `--ro-bind` |
 | `pinned` | May not replace or remove the path itself | `literal` deny | Refused |
 | `unreadable` | May not read files in it | `file-read-data` deny | Empty read-only `--tmpfs` |
 | `readable` | Exceptions inside `unreadable` | `file-read-data` allow | `--ro-bind` |
-| `hidden` | May not read or list, wins over everything | `file-read*` deny | `--tmpfs` or `/dev/null` over it |
+| `hidden` | May not read, list, write or rename, wins over everything | `file-read*` and `file-write*` deny, and its parents pinned | `--tmpfs` or `/dev/null` over it |
 | `network` | TCP and UDP | `remote ip` deny | `--unshare-net` |
 | `unix_sockets` | Sockets it may connect to, by directory | `remote unix-socket` filters, plus the DNS resolver | Only what `unreadable` and `hidden` keep out of reach |
 | `mach_services` | macOS services it may look up | `mach-lookup` allowlist | Not applicable |

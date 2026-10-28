@@ -66,6 +66,67 @@ fn read_only_wins_inside_writable() {
     assert!(!w.join("ro/b").exists());
 }
 
+/// A writable dir with `a/ro/f` read-only and `secret/key` hidden, and that policy
+fn ruled_dir() -> (tempfile::TempDir, PathBuf, Policy) {
+    let dir = tempfile::tempdir().unwrap();
+    let w = real(dir.path());
+    fs::create_dir_all(w.join("a/ro")).unwrap();
+    fs::create_dir(w.join("secret")).unwrap();
+    fs::write(w.join("a/ro/f"), "orig").unwrap();
+    fs::write(w.join("secret/key"), "key").unwrap();
+    let policy = Policy {
+        writable: vec![w.clone()],
+        read_only: vec![w.join("a/ro")],
+        hidden: vec![w.join("secret")],
+        ..Policy::default()
+    };
+    (dir, w, policy)
+}
+
+#[test]
+fn renaming_a_parent_never_frees_a_read_only_path() {
+    let (_dir, w, policy) = ruled_dir();
+    let (ok, err) = run(
+        policy,
+        &format!(
+            "mv {0}/a {0}/a2 2>/dev/null; ! echo x >> {0}/a/ro/f && ! echo x >> {0}/a2/ro/f",
+            w.display()
+        ),
+    );
+    assert!(ok, "{err}");
+    let f = fs::read_to_string(w.join("a/ro/f")).or_else(|_| fs::read_to_string(w.join("a2/ro/f")));
+    assert_eq!(f.unwrap(), "orig");
+}
+
+#[test]
+fn renaming_never_frees_a_hidden_path() {
+    let (_dir, w, policy) = ruled_dir();
+    let (ok, err) = run(
+        policy,
+        &format!(
+            "mv {0}/secret {0}/s2 2>/dev/null; mv {0} {0}.moved 2>/dev/null; \
+             ! grep -qs key {0}/secret/key {0}/s2/key {0}.moved/secret/key",
+            w.display()
+        ),
+    );
+    assert!(ok, "{err}");
+}
+
+#[test]
+fn a_hard_link_never_frees_a_ruled_file() {
+    let (_dir, w, policy) = ruled_dir();
+    let (ok, err) = run(
+        policy,
+        &format!(
+            "ln {0}/a/ro/f {0}/l 2>/dev/null && echo y >> {0}/l; \
+             ln {0}/secret/key {0}/k 2>/dev/null; ! grep -qs key {0}/k",
+            w.display()
+        ),
+    );
+    assert!(ok, "{err}");
+    assert_eq!(fs::read_to_string(w.join("a/ro/f")).unwrap(), "orig");
+}
+
 #[test]
 fn hidden_wins_inside_writable() {
     let w = tempfile::tempdir().unwrap();

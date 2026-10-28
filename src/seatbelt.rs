@@ -74,12 +74,18 @@ pub(crate) fn profile(p: &Policy) -> Result<String, Error> {
         out += "(allow file-write* (literal \"/dev/ptmx\") (literal \"/dev/tty\") (regex #\"^/dev/ttys[0-9]+$\"))\n";
     }
 
-    if !p.pinned.is_empty() {
-        out += &format!("(deny file-write*{})\n", filters("literal", &p.pinned)?);
+    let mut pinned = p.pinned.clone();
+    pinned.extend(ruled_parents(p));
+
+    if !pinned.is_empty() {
+        out += &format!("(deny file-write*{})\n", filters("literal", &pinned)?);
     }
 
-    if !p.read_only.is_empty() {
-        out += &format!("(deny file-write*{})\n", filters("subpath", &p.read_only)?);
+    // A hidden path that could be renamed would leave its rule behind
+    let fixed: Vec<PathBuf> = p.read_only.iter().chain(&p.hidden).cloned().collect();
+
+    if !fixed.is_empty() {
+        out += &format!("(deny file-write*{})\n", filters("subpath", &fixed)?);
     }
 
     if !p.unreadable.is_empty() {
@@ -147,6 +153,26 @@ pub(crate) fn profile(p: &Policy) -> Result<String, Error> {
     Ok(out)
 }
 
+/**
+ * Every parent of a read-only, pinned or hidden path that the command could rename. Seatbelt matches
+ * the path at each access, so renaming a parent moves the path out from under its rule. Denying writes
+ * to the parent itself keeps it in place, while what is inside it stays writable
+ **/
+fn ruled_parents(p: &Policy) -> Vec<PathBuf> {
+    let mut parents: Vec<PathBuf> = p
+        .read_only
+        .iter()
+        .chain(&p.pinned)
+        .chain(&p.hidden)
+        .flat_map(|path| path.ancestors().skip(1))
+        .filter(|a| p.writable.iter().any(|w| a.starts_with(w)))
+        .map(Path::to_path_buf)
+        .collect();
+    parents.sort();
+    parents.dedup();
+    parents
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,6 +213,18 @@ mod tests {
             at("(allow file-write* (subpath \"/w\")") < at("(deny file-write* (subpath \"/w/ro\")")
         );
         assert!(at("(allow file-read-data") < at("(deny file-read* (subpath \"/w/secret\")"));
+    }
+
+    #[test]
+    fn pins_each_parent_of_a_ruled_path_inside_a_writable_dir() {
+        let policy = Policy {
+            writable: vec!["/home".into()],
+            read_only: vec!["/home/.config/git".into()],
+            hidden: vec!["/elsewhere/key".into()],
+            ..Policy::default()
+        };
+        let parents: Vec<PathBuf> = vec!["/home".into(), "/home/.config".into()];
+        assert_eq!(ruled_parents(&policy), parents);
     }
 
     #[test]

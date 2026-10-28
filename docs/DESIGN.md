@@ -10,6 +10,7 @@ A library that runs a command under a path policy enforced by the kernel. Seatbe
 - The caller names the backend for each use, or takes `Backend::detect()`.
 - `Sandbox::new` checks the policy against the backend and refuses what that backend cannot enforce, before anything runs. A rule that silently does nothing is worse than an error.
 - Every path is resolved first. Seatbelt matches the real path, so `/tmp` must become `/private/tmp`.
+- Seatbelt matches the path at each access, so renaming a parent would move a ruled path out from under its rule. Every parent of a `read_only`, `pinned` or `hidden` path inside a writable dir is pinned: it stays in place, and what is inside it stays writable. bwrap needs nothing here, its mounts move with a renamed parent and a hard link cannot cross them.
 
 ## What came from shipcheck
 
@@ -47,6 +48,7 @@ What stays in shipcheck: the environment it builds for a check, its `TOOLCHAINS`
 ## Costs
 
 - Apple marks `sandbox-exec` deprecated. Codex and Claude Code still use it, and nothing replaces it for an unsigned CLI. If Apple removes it, the macOS backend goes.
+- Under Seatbelt, the parents of a ruled path cannot be renamed, deleted or have their mode changed. With `$HOME` writable and `~/.ssh` read-only, that includes `$HOME` itself.
 - Seatbelt cannot nest. A tool that sandboxes its own children, like shipcheck, fails inside a caller's sandbox and must run outside it.
 - bwrap needs unprivileged user namespaces. Ubuntu 23.10 and later restrict them with AppArmor, and `Backend::detect()` names the fix.
 - Under bwrap, `unix_sockets` depends on hiding, see above.
