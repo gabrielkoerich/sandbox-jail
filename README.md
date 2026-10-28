@@ -12,9 +12,12 @@ cargo install sandbox-jail
 sandbox-jail exec "curl -fsSL https://example.com/install.sh | sh"   # one string runs with sh -c
 sandbox-jail exec -w ~/out --no-network -- make build                # a program and its arguments
 sandbox-jail exec --dry-run true                                     # print the sandbox command
+sandbox-jail exec --vm tart:ghcr.io/cirruslabs/ubuntu:24.04 make     # in a throwaway VM
 ```
 
 `exec` may write the current directory and the temp dirs, and nothing else. Credentials in your home are hidden, signals reach only its own processes, and on macOS it cannot run `launchctl` or a setuid binary such as `sudo`. `-w` adds a writable path, `-r` a read-only one inside it, `--hide` an unreadable one. The exit code is the command's, or 2 when the sandbox cannot start.
+
+With `--vm tart:<image>` the command runs in a clone of a tart image instead, deleted when it ends. The guest has its own kernel and sees only the current directory and the `-w` paths, each at its host path. The image needs the Tart Guest Agent and passwordless sudo, as `ghcr.io/cirruslabs/ubuntu` and the `macos-*-base` images have. A Linux clone starts in about 3 s and a macOS one in about 20 s.
 
 ## Library
 
@@ -59,6 +62,8 @@ let status = sandbox.command("cargo").arg("test").current_dir(&worktree).status(
 | `overlays` | Writes go to a layer over a directory | Refused | `--overlay`, check first with `overlay_supported()` |
 
 `sandbox_jail::known` has lists a caller can opt into: credential paths, an env filter for credentials, the temp dirs, the Mach services common tools need, the setuid binaries and `launchctl`. None applies unless the caller puts it in its policy.
+
+`sandbox_jail::vm::Vm::tart(image, &policy)` boots a clone with the policy's `writable` dirs shared read-write and its `readable` dirs read-only, each at its host path, and deletes the clone when the handle drops. `vm.command(dir, &argv)` runs a command in the guest. A rule the guest cannot enforce, such as `read_only` inside a share, `hidden` inside a share, `no_exec` or `network = false`, is refused before the VM starts.
 
 On macOS, `sandbox_jail::macos::sandboxed()` and `sandbox_jail::macos::denies()` ask the kernel about the sandbox the current process runs in. macOS cannot start a sandbox inside another one, and `Backend::detect()` returns `Error::Nested` there.
 
