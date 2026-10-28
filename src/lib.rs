@@ -6,6 +6,7 @@ pub mod known;
 #[cfg(target_os = "macos")]
 pub mod macos;
 mod seatbelt;
+pub mod vm;
 
 use std::ffi::{OsStr, OsString};
 use std::fmt;
