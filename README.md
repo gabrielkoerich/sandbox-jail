@@ -79,5 +79,3 @@ The tests in `tests/sandbox.rs` run real commands in the sandbox. On Linux they 
 docker run --rm --privileged -e TMPDIR=/dev/shm -e SANDBOX_JAIL_EXPECT_OVERLAY=1 -v "$PWD":/src:ro rust:1-slim bash -c \
   'apt-get update -qq && apt-get install -y -qq bubblewrap && cp -r /src /work && cd /work && cargo test'
 ```
-
-See [docs/DESIGN.md](docs/DESIGN.md) for why it is built this way, and [docs/orch.md](docs/orch.md) for the first planned user.

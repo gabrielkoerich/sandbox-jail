@@ -75,5 +75,5 @@ Measured on an M4 Max: a `cirruslabs/ubuntu:24.04` clone answers `tart exec` in 
 ## Next
 
 1. Move shipcheck to this crate with no change in behavior.
-2. Orch, see [orch.md](orch.md).
+2. Orch, whose plan lives in the orch repository.
 3. The launchd process tree kill, when orch needs it.
