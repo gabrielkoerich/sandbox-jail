@@ -1,6 +1,22 @@
 # sandbox-jail
 
+[![CI](https://github.com/gabrielkoerich/sandbox-jail/actions/workflows/ci.yml/badge.svg)](https://github.com/gabrielkoerich/sandbox-jail/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/gabrielkoerich/sandbox-jail)](https://github.com/gabrielkoerich/sandbox-jail/releases/latest) [![crates.io](https://img.shields.io/crates/v/sandbox-jail)](https://crates.io/crates/sandbox-jail) [![docs.rs](https://img.shields.io/docsrs/sandbox-jail)](https://docs.rs/sandbox-jail) [![License](https://img.shields.io/crates/l/sandbox-jail)](LICENSE)
+
 Run a command in the OS sandbox: Seatbelt (`sandbox-exec`) on macOS, bubblewrap (`bwrap`) on Linux. The caller defines the whole policy, and the crate turns it into a Seatbelt profile or `bwrap` arguments. A backend refuses a policy it cannot enforce before anything runs.
+
+## Command line
+
+```bash
+cargo install sandbox-jail
+
+sandbox-jail exec "curl -fsSL https://example.com/install.sh | sh"   # one string runs with sh -c
+sandbox-jail exec -w ~/out --no-network -- make build                # a program and its arguments
+sandbox-jail exec --dry-run true                                     # print the sandbox command
+```
+
+`exec` may write the current directory and the temp dirs, and nothing else. Credentials in your home are hidden, signals reach only its own processes, and on macOS it cannot run `launchctl` or a setuid binary such as `sudo`. `-w` adds a writable path, `-r` a read-only one inside it, `--hide` an unreadable one. The exit code is the command's, or 2 when the sandbox cannot start.
+
+## Library
 
 Import it as `sandbox_jail`.
 
