@@ -1,9 +1,8 @@
 name: ci
 
 on:
+  # Push only: a branch push reports the checks on its PR, and a PR trigger would run them twice
   push:
-    branches: [main]
-  pull_request:
 
 jobs:
   # Linux only. GitHub has few macOS runners and jobs queue there, so shipcheck's test-macos covers macOS
