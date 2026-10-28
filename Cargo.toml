@@ -1,0 +1,20 @@
+[package]
+name = "sandbox-jail"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+description = "Run a command in the OS sandbox, Seatbelt on macOS and bubblewrap on Linux, under a policy the caller defines"
+license = "MIT"
+repository = "https://github.com/gabrielkoerich/sandbox-jail"
+readme = "README.md"
+keywords = ["sandbox", "seatbelt", "bubblewrap", "jail", "agents"]
+categories = ["os::macos-apis", "os::linux-apis", "development-tools"]
+include = ["/src/**", "/LICENSE", "/README.md"]
+
+[lib]
+name = "jail"
+
+[dependencies]
+
+[dev-dependencies]
+tempfile = "3"
